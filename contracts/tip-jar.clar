@@ -66,3 +66,19 @@
             {tipper: tx-sender, tip-id: (var-get tip-counter)}
             {message: message})
         (send-tip amount)))
+
+
+
+(define-map monthly-tips 
+    {user: principal, month: uint, year: uint} 
+    {amount: uint})
+
+(define-public (record-monthly-tip (amount uint) (month uint) (year uint))
+    (begin
+        (asserts! (and (> month u0) (<= month u12)) (err u103))
+        (map-set monthly-tips
+            {user: tx-sender, month: month, year: year}
+            {amount: (+ amount (default-to u0 
+                (get amount (map-get? monthly-tips 
+                    {user: tx-sender, month: month, year: year}))))})
+        (ok amount)))

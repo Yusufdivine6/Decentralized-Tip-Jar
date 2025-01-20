@@ -34,3 +34,18 @@
         (asserts! (<= amount (var-get withdrawable-balance)) (err u102))
         (var-set withdrawable-balance (- (var-get withdrawable-balance) amount))
         (ok amount)))
+
+
+(define-map milestone-rewards 
+    {threshold: uint} 
+    {reward-name: (string-ascii 50)})
+
+(define-public (check-milestone (user principal))
+    (let ((user-total (unwrap-panic (get-user-tips user))))
+        (if (>= user-total u1000)
+            (ok "Gold Tipper")
+            (if (>= user-total u500)
+                (ok "Silver Tipper")
+                (if (>= user-total u100)
+                    (ok "Bronze Tipper")
+                    (ok "New Tipper"))))))

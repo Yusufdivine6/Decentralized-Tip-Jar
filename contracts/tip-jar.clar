@@ -49,3 +49,20 @@
                 (if (>= user-total u100)
                     (ok "Bronze Tipper")
                     (ok "New Tipper"))))))
+
+
+
+(define-map tip-messages 
+    {tipper: principal, tip-id: uint} 
+    {message: (string-ascii 280)})
+
+(define-data-var tip-counter uint u0)
+
+(define-public (send-tip-with-message (amount uint) (message (string-ascii 280)))
+    (begin
+        (asserts! (> amount u0) (err u100))
+        (var-set tip-counter (+ (var-get tip-counter) u1))
+        (map-set tip-messages 
+            {tipper: tx-sender, tip-id: (var-get tip-counter)}
+            {message: message})
+        (send-tip amount)))

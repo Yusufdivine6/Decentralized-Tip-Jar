@@ -82,3 +82,18 @@
                 (get amount (map-get? monthly-tips 
                     {user: tx-sender, month: month, year: year}))))})
         (ok amount)))
+
+
+
+(define-public (split-tip (recipients (list 10 principal)) (amount uint))
+    (let ((split-amount (/ amount (len recipients))))
+        (begin
+            (asserts! (> amount u0) (err u100))
+            (asserts! (> (len recipients) u0) (err u104))
+            (ok amount))))
+
+(define-private (send-tip-to-recipient (recipient principal) (amount uint))
+    (map-set user-tips
+        {user: recipient}
+        {amount: (+ amount (default-to u0 
+            (get amount (map-get? user-tips {user: recipient}))))}))

@@ -22,3 +22,15 @@
     (ok (match (map-get? user-tips {user: user})
         tips-data (get amount tips-data)
         u0)))
+
+
+;; Add these at the top with other definitions
+(define-data-var contract-owner principal tx-sender)
+(define-data-var withdrawable-balance uint u0)
+
+(define-public (withdraw-tips (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) (err u101))
+        (asserts! (<= amount (var-get withdrawable-balance)) (err u102))
+        (var-set withdrawable-balance (- (var-get withdrawable-balance) amount))
+        (ok amount)))

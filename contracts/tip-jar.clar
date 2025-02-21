@@ -99,7 +99,6 @@
             (get amount (map-get? user-tips {user: recipient}))))}))
 
 
-
 ;; Define storage for scheduled tips
 (define-map scheduled-tips 
     {user: principal, schedule-id: uint} 

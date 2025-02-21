@@ -97,3 +97,4 @@
         {user: recipient}
         {amount: (+ amount (default-to u0 
             (get amount (map-get? user-tips {user: recipient}))))}))
+;; 

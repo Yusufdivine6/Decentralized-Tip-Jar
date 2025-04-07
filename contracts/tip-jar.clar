@@ -354,3 +354,193 @@
              period: period,
              active: true})
         (ok (var-get subscription-counter))))
+
+
+
+(define-map user-streaks 
+    {user: principal} 
+    {current-streak: uint, last-tip-date: uint, longest-streak: uint})
+
+(define-public (update-streak)
+    (let ((current-data (default-to 
+            {current-streak: u0, last-tip-date: u0, longest-streak: u0}
+            (map-get? user-streaks {user: tx-sender}))))
+        (map-set user-streaks
+            {user: tx-sender}
+            {current-streak: (+ (get current-streak current-data) u1),
+             last-tip-date: block-height,
+             longest-streak: (get longest-streak current-data)})
+        (ok true)))
+
+
+(define-map tip-groups
+    {group-id: uint}
+    {name: (string-ascii 50), members: (list 10 principal), goal: uint})
+
+(define-data-var group-id-counter uint u0)
+
+(define-public (create-tip-group (name (string-ascii 50)) (goal uint))
+    (begin
+        (var-set group-id-counter (+ (var-get group-id-counter) u1))
+        (map-set tip-groups
+            {group-id: (var-get group-id-counter)}
+            {name: name,
+             members: (list tx-sender),
+             goal: goal})
+        (ok (var-get group-id-counter))))
+
+
+(define-map reward-tiers
+    {tier: uint}
+    {name: (string-ascii 20), threshold: uint, bonus: uint})
+
+(define-map user-rewards
+    {user: principal}
+    {current-tier: uint, points: uint})
+
+(define-public (process-reward (user principal) (amount uint))
+    (let ((current-data (default-to
+            {current-tier: u0, points: u0}
+            (map-get? user-rewards {user: user}))))
+        (map-set user-rewards
+            {user: user}
+            {current-tier: (+ (get current-tier current-data) u1),
+             points: (+ (get points current-data) amount)})
+        (ok true)))
+
+
+(define-data-var contract-paused bool false)
+(define-data-var contract-admin principal tx-sender)
+
+(define-public (toggle-contract-pause)
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-admin)) (err u401))
+        (var-set contract-paused (not (var-get contract-paused)))
+        (ok (var-get contract-paused))))
+
+
+
+(define-map multiplier-events
+    {event-id: uint}
+    {multiplier: uint, start-block: uint, end-block: uint, active: bool})
+
+(define-data-var event-counter uint u0)
+
+(define-public (create-multiplier-event (multiplier uint) (duration uint))
+    (begin
+        (var-set event-counter (+ (var-get event-counter) u1))
+        (map-set multiplier-events
+            {event-id: (var-get event-counter)}
+            {multiplier: multiplier,
+             start-block: block-height,
+             end-block: (+ block-height duration),
+             active: true})
+        (ok (var-get event-counter))))
+
+
+
+(define-map pending-recoveries
+    {recovery-id: uint}
+    {user: principal, amount: uint, deadline: uint})
+
+(define-data-var recovery-counter uint u0)
+
+(define-public (request-tip-recovery (amount uint))
+    (begin
+        (var-set recovery-counter (+ (var-get recovery-counter) u1))
+        (map-set pending-recoveries
+            {recovery-id: (var-get recovery-counter)}
+            {user: tx-sender,
+             amount: amount,
+             deadline: (+ block-height u144)})
+        (ok (var-get recovery-counter))))
+
+
+(define-map gift-cards
+    {card-id: uint}
+    {amount: uint, creator: principal, redeemed: bool, recipient: (optional principal)})
+
+(define-data-var gift-card-counter uint u0)
+
+(define-public (create-gift-card (amount uint))
+    (begin
+        (var-set gift-card-counter (+ (var-get gift-card-counter) u1))
+        (map-set gift-cards
+            {card-id: (var-get gift-card-counter)}
+            {amount: amount,
+             creator: tx-sender,
+             redeemed: false,
+             recipient: none})
+        (ok (var-get gift-card-counter))))
+
+(define-public (redeem-gift-card (card-id uint))
+    (let ((card (unwrap! (map-get? gift-cards {card-id: card-id}) (err u300))))
+        (asserts! (not (get redeemed card)) (err u301))
+        (map-set gift-cards
+            {card-id: card-id}
+            {amount: (get amount card),
+             creator: (get creator card),
+             redeemed: true,
+             recipient: (some tx-sender)})
+        (ok (get amount card))))
+
+
+
+(define-map lottery-pool
+    {round: uint}
+    {total-amount: uint, participants: (list 100 principal), winner: (optional principal)})
+
+(define-data-var lottery-round uint u0)
+(define-data-var min-lottery-entry uint u10)
+
+(define-public (enter-lottery)
+    (let ((current-round (var-get lottery-round))
+          (current-pool (default-to 
+            {total-amount: u0, 
+             participants: (list), 
+             winner: none}
+            (map-get? lottery-pool {round: current-round}))))
+        (begin
+            (asserts! (>= (var-get total-tips) (var-get min-lottery-entry)) (err u200))
+            (map-set lottery-pool
+                {round: current-round}
+                {total-amount: (+ (get total-amount current-pool) u1),
+                 participants: (unwrap-panic (as-max-len? 
+                    (append (get participants current-pool) tx-sender) u100)),
+                 winner: none})
+            (ok true))))
+
+(define-public (draw-lottery-winner)
+    (let ((current-round (var-get lottery-round)))
+        (begin
+            (var-set lottery-round (+ current-round u1))
+            (ok current-round))))
+
+
+
+
+(define-map tip-delegates
+    {delegator: principal}
+    {delegate: principal, allowance: uint, expiry: uint})
+
+(define-public (set-tip-delegate (delegate principal) (allowance uint) (duration uint))
+    (begin
+        (map-set tip-delegates
+            {delegator: tx-sender}
+            {delegate: delegate,
+             allowance: allowance,
+             expiry: (+ block-height duration)})
+        (ok true)))
+
+(define-public (tip-through-delegate (amount uint) (delegator principal))
+    (let ((delegation (unwrap! (map-get? tip-delegates {delegator: delegator}) (err u400))))
+        (begin
+            (asserts! (is-eq tx-sender (get delegate delegation)) (err u401))
+            (asserts! (>= (get allowance delegation) amount) (err u402))
+            (asserts! (>= (get expiry delegation) block-height) (err u403))
+            (map-set tip-delegates
+                {delegator: delegator}
+                {delegate: (get delegate delegation),
+                 allowance: (- (get allowance delegation) amount),
+                 expiry: (get expiry delegation)})
+            (send-tip amount))))

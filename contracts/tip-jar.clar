@@ -544,3 +544,72 @@
                  allowance: (- (get allowance delegation) amount),
                  expiry: (get expiry delegation)})
             (send-tip amount))))
+
+
+
+(define-map tip-challenges 
+    {challenge-id: uint}
+    {creator: principal,
+     description: (string-ascii 200),
+     reward: uint,
+     completed: bool,
+     winner: (optional principal)})
+
+(define-data-var challenge-counter uint u0)
+
+(define-public (create-challenge (description (string-ascii 200)) (reward uint))
+    (begin
+        (asserts! (> reward u0) (err u500))
+        (var-set challenge-counter (+ (var-get challenge-counter) u1))
+        (map-set tip-challenges
+            {challenge-id: (var-get challenge-counter)}
+            {creator: tx-sender,
+             description: description,
+             reward: reward,
+             completed: false,
+             winner: none})
+        (ok (var-get challenge-counter))))
+
+(define-public (complete-challenge (challenge-id uint) (winner principal))
+    (let ((challenge (unwrap! (map-get? tip-challenges {challenge-id: challenge-id}) (err u501))))
+        (begin
+            (asserts! (is-eq tx-sender (get creator challenge)) (err u502))
+            (asserts! (not (get completed challenge)) (err u503))
+            (map-set tip-challenges
+                {challenge-id: challenge-id}
+                {creator: (get creator challenge),
+                 description: (get description challenge),
+                 reward: (get reward challenge),
+                 completed: true,
+                 winner: (some winner)})
+            (send-tip (get reward challenge)))))
+
+
+(define-map split-configurations
+    {config-id: uint}
+    {recipients: (list 5 {recipient: principal, percentage: uint})})
+
+(define-data-var split-config-counter uint u0)
+
+(define-public (create-split-config (recipients (list 5 {recipient: principal, percentage: uint})))
+    (begin
+        (asserts! (is-eq u100 (fold + (map get-percentage recipients) u0)) (err u600))
+        (var-set split-config-counter (+ (var-get split-config-counter) u1))
+        (map-set split-configurations
+            {config-id: (var-get split-config-counter)}
+            {recipients: recipients})
+        (ok (var-get split-config-counter))))
+
+(define-public (send-split-tip (config-id uint) (total-amount uint))
+    (let ((config (unwrap! (map-get? split-configurations {config-id: config-id}) (err u601))))
+        (begin
+            (asserts! (> total-amount u0) (err u602))
+            (map process-split-payment 
+                (get recipients config))
+            (ok total-amount))))
+
+(define-private (get-percentage (split {recipient: principal, percentage: uint}))
+    (get percentage split))
+
+(define-private (process-split-payment (split {recipient: principal, percentage: uint}))
+    (send-tip-to-recipient (get recipient split) (get percentage split)))

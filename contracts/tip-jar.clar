@@ -613,3 +613,119 @@
 
 (define-private (process-split-payment (split {recipient: principal, percentage: uint}))
     (send-tip-to-recipient (get recipient split) (get percentage split)))
+
+
+(define-map escrow-agreements
+    {escrow-id: uint}
+    {tipper: principal,
+     recipient: principal,
+     amount: uint,
+     description: (string-ascii 200),
+     status: (string-ascii 20),
+     tipper-approved: bool,
+     recipient-approved: bool,
+     created-at: uint,
+     expires-at: uint})
+
+(define-data-var escrow-counter uint u0)
+
+(define-public (create-escrow (recipient principal) (amount uint) (description (string-ascii 200)) (duration uint))
+    (begin
+        (asserts! (> amount u0) (err u700))
+        (asserts! (not (is-eq tx-sender recipient)) (err u701))
+        (asserts! (> duration u0) (err u702))
+        (var-set escrow-counter (+ (var-get escrow-counter) u1))
+        (map-set escrow-agreements
+            {escrow-id: (var-get escrow-counter)}
+            {tipper: tx-sender,
+             recipient: recipient,
+             amount: amount,
+             description: description,
+             status: "pending",
+             tipper-approved: false,
+             recipient-approved: false,
+             created-at: block-height,
+             expires-at: (+ block-height duration)})
+        (var-set total-tips (+ (var-get total-tips) amount))
+        (ok (var-get escrow-counter))))
+
+(define-public (approve-escrow (escrow-id uint))
+    (let ((agreement (unwrap! (map-get? escrow-agreements {escrow-id: escrow-id}) (err u703))))
+        (begin
+            (asserts! (is-eq (get status agreement) "pending") (err u704))
+            (asserts! (< block-height (get expires-at agreement)) (err u705))
+            (asserts! (or (is-eq tx-sender (get tipper agreement)) 
+                         (is-eq tx-sender (get recipient agreement))) (err u706))
+            (let ((new-tipper-approved (if (is-eq tx-sender (get tipper agreement)) 
+                                         true 
+                                         (get tipper-approved agreement)))
+                  (new-recipient-approved (if (is-eq tx-sender (get recipient agreement)) 
+                                            true 
+                                            (get recipient-approved agreement))))
+                (map-set escrow-agreements
+                    {escrow-id: escrow-id}
+                    {tipper: (get tipper agreement),
+                     recipient: (get recipient agreement),
+                     amount: (get amount agreement),
+                     description: (get description agreement),
+                     status: (if (and new-tipper-approved new-recipient-approved) 
+                               "completed" 
+                               "pending"),
+                     tipper-approved: new-tipper-approved,
+                     recipient-approved: new-recipient-approved,
+                     created-at: (get created-at agreement),
+                     expires-at: (get expires-at agreement)})
+                (if (and new-tipper-approved new-recipient-approved)
+                    (begin
+                        (map-set user-tips
+                            {user: (get recipient agreement)}
+                            {amount: (+ (get amount agreement) 
+                                      (default-to u0 
+                                        (get amount (map-get? user-tips {user: (get recipient agreement)}))))})
+                        (ok "released"))
+                    (ok "approved"))))))
+
+(define-public (cancel-escrow (escrow-id uint))
+    (let ((agreement (unwrap! (map-get? escrow-agreements {escrow-id: escrow-id}) (err u707))))
+        (begin
+            (asserts! (is-eq tx-sender (get tipper agreement)) (err u708))
+            (asserts! (is-eq (get status agreement) "pending") (err u709))
+            (asserts! (not (get recipient-approved agreement)) (err u710))
+            (map-set escrow-agreements
+                {escrow-id: escrow-id}
+                {tipper: (get tipper agreement),
+                 recipient: (get recipient agreement),
+                 amount: (get amount agreement),
+                 description: (get description agreement),
+                 status: "cancelled",
+                 tipper-approved: (get tipper-approved agreement),
+                 recipient-approved: (get recipient-approved agreement),
+                 created-at: (get created-at agreement),
+                 expires-at: (get expires-at agreement)})
+            (var-set total-tips (- (var-get total-tips) (get amount agreement)))
+            (ok "cancelled"))))
+
+(define-public (expire-escrow (escrow-id uint))
+    (let ((agreement (unwrap! (map-get? escrow-agreements {escrow-id: escrow-id}) (err u711))))
+        (begin
+            (asserts! (>= block-height (get expires-at agreement)) (err u712))
+            (asserts! (is-eq (get status agreement) "pending") (err u713))
+            (map-set escrow-agreements
+                {escrow-id: escrow-id}
+                {tipper: (get tipper agreement),
+                 recipient: (get recipient agreement),
+                 amount: (get amount agreement),
+                 description: (get description agreement),
+                 status: "expired",
+                 tipper-approved: (get tipper-approved agreement),
+                 recipient-approved: (get recipient-approved agreement),
+                 created-at: (get created-at agreement),
+                 expires-at: (get expires-at agreement)})
+            (var-set total-tips (- (var-get total-tips) (get amount agreement)))
+            (ok "expired"))))
+
+(define-read-only (get-escrow-details (escrow-id uint))
+    (ok (map-get? escrow-agreements {escrow-id: escrow-id})))
+
+(define-read-only (get-user-escrows (user principal))
+    (ok user))

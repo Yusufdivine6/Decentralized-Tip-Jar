@@ -9,6 +9,16 @@ requirements = []
 path = 'contracts/tip-jar.clar'
 clarity_version = 2
 epoch = 2.5
+
+[contracts.tip-analytics]
+path = 'contracts/tip-analytics.clar'
+clarity_version = 2
+epoch = 2.5
+
+[contracts.tip-matching]
+path = 'contracts/tip-matching.clar'
+clarity_version = 2
+epoch = 2.5
 [repl.analysis]
 passes = ['check_checker']
 
